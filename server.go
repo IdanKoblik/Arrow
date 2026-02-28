@@ -94,7 +94,7 @@ func storeAlert(p *orefPayload) {
 		Title:      p.Title,
 		Data:       p.Data,
 		Desc:       p.Desc,
-		ReceivedAt: time.Now(),
+		ReceivedAt: time.Now().UTC(),
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -125,6 +125,12 @@ func getHistory() []AlertJSON {
 		return []AlertJSON{}
 	}
 
+	loc, err := time.LoadLocation("Asia/Jerusalem")
+	if err != nil {
+		log.Printf("timezone load error: %v", err)
+		loc = time.UTC
+	}
+
 	out := make([]AlertJSON, len(docs))
 	for i, d := range docs {
 		out[i] = AlertJSON{
@@ -133,9 +139,12 @@ func getHistory() []AlertJSON {
 			Title:     d.Title,
 			Data:      d.Data,
 			Desc:      d.Desc,
-			AlertDate: d.ReceivedAt.Format("2006-01-02 15:04:05"),
+			AlertDate: d.ReceivedAt.
+				In(loc).
+				Format("2006-01-02 15:04:05"),
 		}
 	}
+
 	return out
 }
 
