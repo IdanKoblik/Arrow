@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"os"
+	"sync"
 	"time"
 
 	"arrow/pkg/types"
@@ -13,7 +14,13 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-var Collection *mongo.Collection
+var (
+	Collection   *mongo.Collection
+	historyCache struct {
+		sync.RWMutex
+		data []types.AlertJSON
+	}
+)
 
 func Init() {
 	uri := os.Getenv("MONGODB_URI")
@@ -69,9 +76,34 @@ func StoreAlert(p *types.OrefPayload) {
 	if err != nil && !mongo.IsDuplicateKeyError(err) {
 		log.Println(err)
 	}
+
+	loc, _ := time.LoadLocation("Asia/Jerusalem")
+	alertJSON := types.AlertJSON{
+		ID:        doc.OrefID,
+		Cat:       doc.Cat,
+		Title:     doc.Title,
+		Data:      doc.Data,
+		Desc:      doc.Desc,
+		AlertDate: doc.ReceivedAt.In(loc).Format("2006-01-02 15:04:05"),
+	}
+
+	historyCache.Lock()
+	historyCache.data = append([]types.AlertJSON{alertJSON}, historyCache.data...)
+	if len(historyCache.data) > 200 {
+		historyCache.data = historyCache.data[:200]
+	}
+	historyCache.Unlock()
 }
 
 func GetHistory() []types.AlertJSON {
+	historyCache.RLock()
+	if len(historyCache.data) > 0 {
+		data := historyCache.data
+		historyCache.RUnlock()
+		return data
+	}
+	historyCache.RUnlock()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -95,14 +127,19 @@ func GetHistory() []types.AlertJSON {
 	out := make([]types.AlertJSON, len(docs))
 	for i, d := range docs {
 		out[i] = types.AlertJSON{
-			ID:        d.OrefID,
-			Cat:       d.Cat,
-			Title:     d.Title,
-			Data:      d.Data,
-			Desc:      d.Desc,
+			ID:    d.OrefID,
+			Cat:   d.Cat,
+			Title: d.Title,
+			Data:  d.Data,
+			Desc:  d.Desc,
 			AlertDate: d.ReceivedAt.In(loc).
 				Format("2006-01-02 15:04:05"),
 		}
 	}
+
+	historyCache.Lock()
+	historyCache.data = out
+	historyCache.Unlock()
+
 	return out
 }
