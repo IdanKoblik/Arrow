@@ -46,7 +46,10 @@ type orefPayload struct {
 }
 
 var (
-	col        *mongo.Collection
+	col         *mongo.Collection
+	latestAlert *orefPayload
+	lastID      string
+
 	httpClient = &http.Client{
 		Timeout: 4 * time.Second,
 		Transport: &http.Transport{
@@ -84,7 +87,7 @@ func initMongo() {
 		Keys: bson.D{{Key: "received_at", Value: -1}},
 	})
 
-	log.Printf("[MongoDB] connected — %s", uri)
+	log.Println("[MongoDB] connected")
 }
 
 func storeAlert(p *orefPayload) {
@@ -96,11 +99,13 @@ func storeAlert(p *orefPayload) {
 		Desc:       p.Desc,
 		ReceivedAt: time.Now().UTC(),
 	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+
 	_, err := col.InsertOne(ctx, doc)
 	if err != nil && !mongo.IsDuplicateKeyError(err) {
-		log.Printf("[MongoDB] insert: %v", err)
+		log.Println("[MongoDB] insert:", err)
 	}
 }
 
@@ -114,22 +119,16 @@ func getHistory() []AlertJSON {
 			SetLimit(200),
 	)
 	if err != nil {
-		log.Printf("[MongoDB] find: %v", err)
 		return []AlertJSON{}
 	}
 	defer cur.Close(ctx)
 
 	var docs []AlertDoc
 	if err := cur.All(ctx, &docs); err != nil {
-		log.Printf("[MongoDB] decode: %v", err)
 		return []AlertJSON{}
 	}
 
-	loc, err := time.LoadLocation("Asia/Jerusalem")
-	if err != nil {
-		log.Printf("timezone load error: %v", err)
-		loc = time.UTC
-	}
+	loc, _ := time.LoadLocation("Asia/Jerusalem")
 
 	out := make([]AlertJSON, len(docs))
 	for i, d := range docs {
@@ -139,51 +138,71 @@ func getHistory() []AlertJSON {
 			Title:     d.Title,
 			Data:      d.Data,
 			Desc:      d.Desc,
-			AlertDate: d.ReceivedAt.
-				In(loc).
+			AlertDate: d.ReceivedAt.In(loc).
 				Format("2006-01-02 15:04:05"),
 		}
 	}
-
 	return out
+}
+
+func pollOref() {
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
+	for range ticker.C {
+
+		req, _ := http.NewRequest("GET", orefURL, nil)
+		req.Header.Set("Referer", "https://www.oref.org.il/")
+		req.Header.Set("X-Requested-With", "XMLHttpRequest")
+		req.Header.Set("User-Agent", "Mozilla/5.0")
+		req.Header.Set("Accept", "application/json")
+
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			log.Println("[Oref] request error:", err)
+			continue
+		}
+
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+
+		trimmed := strings.TrimSpace(strings.TrimPrefix(string(body), "\xef\xbb\xbf"))
+		if trimmed == "" || trimmed == "null" || trimmed == "\r\n" {
+			continue
+		}
+
+		var p orefPayload
+		if err := json.Unmarshal([]byte(trimmed), &p); err != nil {
+			continue
+		}
+
+		if p.ID == "" {
+			continue
+		}
+
+		if p.ID != lastID {
+			log.Println("[Oref] New alert:", p.ID)
+			lastID = p.ID
+			latestAlert = &p
+			storeAlert(&p)
+		}
+	}
 }
 
 func jsonHeaders(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Cache-Control", "no-store")
 }
 
 func handleAlerts(w http.ResponseWriter, r *http.Request) {
-	req, _ := http.NewRequest("GET", orefURL, nil)
-	req.Header.Set("Referer", "https://www.oref.org.il/")
-	req.Header.Set("X-Requested-With", "XMLHttpRequest")
-	req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64)")
-	req.Header.Set("Accept", "application/json, text/plain, */*")
-
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
-		return
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	trimmed := strings.TrimSpace(strings.TrimPrefix(string(body), "\xef\xbb\xbf"))
-	if trimmed != "" && trimmed != "null" && trimmed != "\r\n" {
-		var p orefPayload
-		if json.Unmarshal([]byte(trimmed), &p) == nil && p.ID != "" {
-			storeAlert(&p)
-		}
-	}
-
 	jsonHeaders(w)
-	w.Write(body)
+
+	if latestAlert == nil {
+		w.Write([]byte("null"))
+		return
+	}
+
+	json.NewEncoder(w).Encode(latestAlert)
 }
 
 func handleHistory(w http.ResponseWriter, r *http.Request) {
@@ -193,12 +212,17 @@ func handleHistory(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	log.Println("Starting server...")
+
 	initMongo()
+
+	go pollOref()
 
 	fs := http.FileServer(http.Dir("."))
 	mux := http.NewServeMux()
+
 	mux.HandleFunc("/api/alerts", handleAlerts)
 	mux.HandleFunc("/api/history", handleHistory)
+
 	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/" {
 			http.ServeFile(w, r, "index.html")
