@@ -1,0 +1,773 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Arrow 🏹 - Active alert system</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── Header ── */
+    header {
+      background: #1a1a2e;
+      color: white;
+      padding: 0 20px;
+      height: 52px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+
+    .brand { display: flex; align-items: center; gap: 10px; }
+
+    .logo {
+      width: 32px; height: 32px;
+      background: #e53935; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 17px;
+      animation: logoPulse 2.5s infinite;
+    }
+    @keyframes logoPulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(229,57,53,0.5); }
+      60%       { box-shadow: 0 0 0 10px rgba(229,57,53,0); }
+    }
+
+    .brand-text .t1 { font-size: 1.05em; font-weight: 700; }
+    .brand-text .t2 { font-size: 0.7em;  color: rgba(255,255,255,0.5); }
+
+    .header-right { display: flex; align-items: center; gap: 12px; }
+
+    .status {
+      display: flex; align-items: center; gap: 5px;
+      font-size: 0.8em; color: rgba(255,255,255,0.7);
+    }
+    .sdot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: #4caf50;
+    }
+    .sdot.err  { background: #f44336; }
+    .sdot.conn { background: #ff9800; animation: blink 1s infinite; }
+    @keyframes blink { 50% { opacity: 0.2; } }
+
+    .upd { font-size: 0.72em; color: rgba(255,255,255,0.35); }
+
+    .btn {
+      border: none; border-radius: 20px; padding: 5px 12px;
+      cursor: pointer; font-size: 0.8em; transition: opacity 0.2s;
+    }
+    .btn:hover { opacity: 0.8; }
+    .btn-sound { background: rgba(255,255,255,0.12); color: white; }
+    .btn-demo  { background: rgba(255,193,7,0.18); color: #ffc107; border: 1px solid rgba(255,193,7,0.3); }
+
+    /* ── Layout ── */
+    .body {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+      direction: ltr;   /* keep map left, sidebar right */
+    }
+
+    #map { flex: 1; }
+
+    /* ── Sidebar ── */
+    aside {
+      width: 340px;
+      background: #fff;
+      border-left: 1px solid #e0e0e0;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      box-shadow: -2px 0 8px rgba(0,0,0,0.07);
+      direction: rtl;
+    }
+
+    .sh {
+      padding: 9px 14px;
+      font-size: 0.82em; font-weight: 600; color: #555;
+      background: #f9f9f9;
+      border-bottom: 1px solid #ebebeb;
+      display: flex; align-items: center; justify-content: space-between;
+      flex-shrink: 0;
+    }
+
+    .badge {
+      background: #e53935; color: white;
+      border-radius: 12px; padding: 1px 8px;
+      font-size: 0.8em; display: none;
+    }
+
+    /* Active section */
+    #active-wrap { flex-shrink: 0; border-bottom: 1px solid #e0e0e0; }
+
+    #active-body {
+      padding: 8px;
+      max-height: 290px;
+      overflow-y: auto;
+    }
+
+    .ok {
+      padding: 22px 16px;
+      text-align: center; color: #43a047;
+      font-size: 0.9em; font-weight: 500;
+    }
+    .ok .oi { font-size: 1.8em; margin-bottom: 5px; }
+
+    .card {
+      border-radius: 8px;
+      border: 1px solid #e0e0e0;
+      overflow: hidden;
+      margin-bottom: 8px;
+      animation: ci 0.28s ease;
+    }
+    @keyframes ci {
+      from { opacity: 0; transform: translateX(12px); }
+      to   { opacity: 1; transform: translateX(0); }
+    }
+
+    .card-head {
+      padding: 9px 12px;
+      display: flex; align-items: center; gap: 8px;
+      color: white;
+    }
+    .c1  .card-head { background: #e53935; }
+    .c2  .card-head { background: #f57c00; }
+    .c3  .card-head, .c101 .card-head { background: #546e7a; }
+    .c4  .card-head { background: #7b1fa2; }
+    .c5  .card-head { background: #f9a825; color: #333; }
+    .c6  .card-head { background: #0277bd; }
+    .c7  .card-head { background: #2e7d32; }
+    .c8  .card-head { background: #00838f; }
+    .c13 .card-head { background: #bf360c; }
+
+    .ci { font-size: 1.1em; }
+    .cn { font-weight: 700; font-size: 0.87em; }
+    .cd { font-size: 0.73em; opacity: 0.85; }
+    .cc {
+      margin-right: auto; /* pushes to left in RTL */
+      background: rgba(255,255,255,0.25);
+      border-radius: 10px; padding: 2px 8px;
+      font-size: 0.77em; font-weight: 600; white-space: nowrap;
+    }
+
+    .card-locs {
+      padding: 7px 10px;
+      display: flex; flex-wrap: wrap; gap: 4px;
+      background: #fff;
+    }
+
+    .chip {
+      border-radius: 4px; padding: 3px 8px;
+      font-size: 0.75em; cursor: pointer;
+      border: 1px solid; transition: all 0.15s;
+    }
+    .c1  .chip { background: #ffebee; color: #c62828; border-color: #ef9a9a; }
+    .c1  .chip:hover { background: #e53935; color: white; }
+    .c2  .chip { background: #fff3e0; color: #e65100; border-color: #ffcc80; }
+    .c2  .chip:hover { background: #f57c00; color: white; }
+    .c3  .chip, .c101 .chip { background: #eceff1; color: #455a64; border-color: #b0bec5; }
+    .c3  .chip:hover, .c101 .chip:hover { background: #546e7a; color: white; }
+    .c13 .chip { background: #fbe9e7; color: #bf360c; border-color: #ffab91; }
+    .c13 .chip:hover { background: #bf360c; color: white; }
+
+    /* History section */
+    #hist-wrap {
+      flex: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 0;
+    }
+    #hist-body { flex: 1; overflow-y: auto; }
+
+    .hi {
+      display: flex; gap: 9px; align-items: flex-start;
+      padding: 9px 14px; border-bottom: 1px solid #f0f0f0;
+      font-size: 0.8em;
+    }
+    .hi:hover { background: #fafafa; }
+    .hd {
+      width: 9px; height: 9px; border-radius: 50%; margin-top: 4px; flex-shrink: 0;
+    }
+    .hd.d1  { background: #e53935; } .hd.d2  { background: #f57c00; }
+    .hd.d3  { background: #546e7a; } .hd.d4  { background: #7b1fa2; }
+    .hd.d13 { background: #bf360c; } .hd.dx  { background: #9e9e9e; }
+    .hinfo { flex: 1; min-width: 0; }
+    .ht    { font-weight: 600; color: #333; }
+    .hl    { color: #888; margin-top: 2px; line-height: 1.4; }
+    .htime { color: #bbb; font-size: 0.87em; white-space: nowrap; }
+
+    /* Popup */
+    .leaflet-popup-content-wrapper { border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,0.13); }
+    .pop { text-align: right; direction: rtl; min-width: 120px; }
+    .pop strong { display: block; font-size: 0.93em; }
+    .pop .pc { color: #e53935; font-size: 0.8em; margin-top: 2px; }
+    .pop .pd { color: #888;    font-size: 0.77em; margin-top: 1px; }
+
+    .demo-tag {
+      background: #ffc107; color: #333;
+      font-size: 0.72em; font-weight: 700;
+      padding: 2px 7px; border-radius: 4px;
+      letter-spacing: 0.04em; vertical-align: middle;
+    }
+    .demo-banner {
+      background: #fff8e1; border-bottom: 1px solid #ffc107;
+      color: #795500; font-size: 0.8em;
+      padding: 5px 14px; text-align: center;
+      display: none;
+    }
+    .hdemo { /* history row demo marker */
+      font-size: 0.7em; background: #fff8e1; color: #795500;
+      border: 1px solid #ffc107; border-radius: 3px;
+      padding: 1px 5px; vertical-align: middle; margin-right: 4px;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="logo">🚨</div>
+    <div class="brand-text">
+      <div class="t1">מפת אזעקות חיות</div>
+      <div class="t2">עדכון בזמן אמת · פיקוד העורף</div>
+    </div>
+  </div>
+  <div class="header-right">
+    <span class="upd" id="upd"></span>
+    <div class="status">
+      <div class="sdot conn" id="sdot"></div>
+      <span id="stxt">מתחבר...</span>
+    </div>
+    <button class="btn btn-sound" onclick="toggleSound()" id="bsound">🔊 קול</button>
+    <button class="btn btn-demo"  onclick="loadDemo()">טען דמו</button>
+  </div>
+</header>
+
+<div class="demo-banner" id="demo-banner">⚠️ מצב דמו — הנתונים אינם אמיתיים</div>
+<div class="body">
+  <div id="map"></div>
+
+  <aside>
+    <div id="active-wrap">
+      <div class="sh">
+        <span>אזעקות פעילות</span>
+        <span class="badge" id="badge">0</span>
+      </div>
+      <div id="active-body">
+        <div class="ok"><div class="oi">✓</div>אין אזעקות פעילות כרגע</div>
+      </div>
+    </div>
+
+    <div id="hist-wrap">
+      <div class="sh">
+        <span>היסטוריה</span>
+        <span id="hcount" style="color:#bbb;font-size:0.85em"></span>
+      </div>
+      <div id="hist-body">
+        <div style="padding:16px;text-align:center;color:#ccc;font-size:0.8em">ממתין לאזעקות...</div>
+      </div>
+    </div>
+  </aside>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const ALERTS_URL  = '/api/alerts';
+const HISTORY_URL = '/api/history';
+const POLL_MS     = 1000;
+let isDemo = false;
+
+const CATS = {
+  1:   { icon:'🚀', label:'ירי רקטות וטילים',    color:'#e53935', cls:'c1',   dot:'d1'  },
+  2:   { icon:'⚠️', label:'עימות אזרחי',          color:'#f57c00', cls:'c2',   dot:'d2'  },
+  3:   { icon:'🔵', label:'תרגיל',                color:'#546e7a', cls:'c3',   dot:'d3'  },
+  4:   { icon:'🌍', label:'רעידת אדמה',           color:'#7b1fa2', cls:'c4',   dot:'d4'  },
+  5:   { icon:'☣️', label:'חומרים מסוכנים',       color:'#f9a825', cls:'c5',   dot:'dx'  },
+  6:   { icon:'🌊', label:'גל צונאמי',            color:'#0277bd', cls:'c6',   dot:'dx'  },
+  7:   { icon:'☢️', label:'חומרים רדיואקטיביים',  color:'#2e7d32', cls:'c7',   dot:'dx'  },
+  8:   { icon:'🌪️', label:'מזג אויר קיצוני',      color:'#00838f', cls:'c8',   dot:'dx'  },
+  13:  { icon:'🔥', label:'שריפות',               color:'#bf360c', cls:'c13',  dot:'d13' },
+  101: { icon:'🔵', label:'תרגיל - רקטות',        color:'#546e7a', cls:'c101', dot:'d3'  },
+};
+const cat = n => CATS[+n] || { icon:'❗', label:'התרעה', color:'#e53935', cls:'c1', dot:'d1' };
+
+const LOCS = {
+  'תל אביב':[32.0853,34.7818],'תל אביב-יפו':[32.0853,34.7818],'יפו':[32.0478,34.7503],
+  'ירושלים':[31.7683,35.2137],'חיפה':[32.7940,34.9896],'באר שבע':[31.2530,34.7915],
+  'אילת':[29.5577,34.9519],'נתניה':[32.3215,34.8532],'אשדוד':[31.8044,34.6553],
+  'אשקלון':[31.6688,34.5743],'פתח תקווה':[32.0870,34.8872],'ראשון לציון':[31.9730,34.7925],
+  'חולון':[32.0100,34.7731],'בני ברק':[32.0833,34.8333],'בת ים':[32.0204,34.7508],
+  'רמת גן':[32.0678,34.8228],'גבעתיים':[32.0694,34.8100],'אור יהודה':[32.0297,34.8533],
+  'קריית אונו':[32.0625,34.8608],'רמת השרון':[32.1461,34.8383],'הרצליה':[32.1625,34.8436],
+  'כפר סבא':[32.1783,34.9064],'רעננה':[32.1839,34.8706],'הוד השרון':[32.1503,34.8919],
+  'כוכב יאיר':[32.2072,34.9753],'ראש העין':[32.0956,34.9570],'אבן יהודה':[32.2653,34.8908],
+  'נס ציונה':[31.9289,34.7981],'רחובות':[31.8947,34.8147],'מודיעין':[31.8980,35.0100],
+  'מודיעין-מכבים-רעות':[31.8980,35.0100],'לוד':[31.9517,34.9019],'רמלה':[31.9303,34.8728],
+  'גדרה':[31.8131,34.7783],'יבנה':[31.8764,34.7394],'חדרה':[32.4350,34.9194],
+  'עכו':[32.9178,35.0719],'נהריה':[33.0072,35.0975],'כרמיאל':[32.9125,35.2978],
+  'מעלות-תרשיחא':[33.0167,35.2833],'מעלות':[33.0167,35.2833],
+  'קריית שמונה':[33.2072,35.5696],'קרית שמונה':[33.2072,35.5696],
+  'צפת':[32.9646,35.4960],'טבריה':[32.7921,35.5312],'נצרת':[32.7001,35.2981],
+  'עפולה':[32.6073,35.2894],'יקנעם עילית':[32.6567,35.1067],
+  'יקנעם המושבה והזורע':[32.6567,35.1067],
+  'קריית טבעון':[32.7011,35.1217],'קרית טבעון - בית זייד':[32.7011,35.1217],
+  'זכרון יעקב':[32.5731,34.9571],'בנימינה':[32.5256,34.9456],
+  'קריית גת':[31.6100,34.7639],'קרית גת':[31.6100,34.7639],
+  'ירוחם':[30.9883,34.9317],'מצפה רמון':[30.6100,34.8019],
+  'דימונה':[31.0670,35.0320],'ערד':[31.2586,35.2128],'רהט':[31.3940,34.7558],
+  'שדרות':[31.5253,34.5969],'נתיבות':[31.4228,34.5942],'אופקים':[31.3111,34.6214],
+  'קריית ים':[32.8453,35.0686],'קרית ים':[32.8453,35.0686],
+  'קריית מוצקין':[32.8361,35.0756],'קרית מוצקין':[32.8361,35.0756],
+  'קריית ביאליק':[32.8239,35.0808],'קרית ביאליק':[32.8239,35.0808],
+  'קריית אתא':[32.8100,35.1047],'קרית אתא':[32.8100,35.1047],
+  'טירת כרמל':[32.7567,34.9694],'טירת הכרמל':[32.7567,34.9694],
+  'נשר':[32.7686,35.0436],'קצרין':[32.9989,35.6892],
+  'נוף הגליל':[32.6869,35.3117],'מגדל העמק':[32.6733,35.2408],
+  // Haifa / Carmel
+  'כפר המכבי':[32.7239,35.0772],'מעגן מיכאל':[32.5478,34.9172],
+  'אביאל':[32.5050,34.9728],'מעלה עירון':[32.5339,35.0489],
+  'עתלית':[32.6942,34.9428],'מועאוויה':[32.5572,35.0756],
+  'הררית יחד':[32.8611,35.2011],'אורנים':[32.7133,35.1178],
+  'איבטין':[32.7311,35.0742],'אלונים':[32.7253,35.0881],
+  'ביר אלמכסור':[32.7661,35.1528],'בית אורן':[32.7394,35.0119],
+  'בסמת טבעון':[32.7461,35.1208],'גבעת וולפסון':[32.5597,35.0431],
+  'דלית אל כרמל':[32.6975,35.0611],'דמיידה':[32.5903,35.1392],
+  'הרדוף':[32.7533,35.1203],'יגור':[32.7400,35.0569],
+  'כעביה טבאש':[32.6717,35.1222],'כפר חסידים':[32.7517,35.0819],
+  'כפר יהושע':[32.6572,35.1078],'כפר מנדא':[32.8136,35.2517],
+  'כפר תקווה':[32.6317,35.0878],'מרחביה מושב':[32.6069,35.2011],
+  'מרחביה קיבוץ':[32.6019,35.2078],'נאעורה':[32.5989,35.1522],
+  'נופית':[32.7286,35.1225],'סולם':[32.5919,35.2022],
+  'עדי':[32.7133,35.1028],'עספיא':[32.7267,35.0589],
+  'ראס עלי':[32.7533,35.1394],'רכסים':[32.7694,35.0994],
+  'רמת ישי':[32.7264,35.1694],'שדה יעקב':[32.6672,35.1219],
+  'שער העמקים':[32.7181,35.0847],'שפרעם':[32.8028,35.1722],
+  'אליקים':[32.6600,35.0581],"גבעת ניל''י":[32.5236,34.9917],
+  'גלעד':[32.4808,35.0083],'דליה':[32.6108,35.0761],
+  'מדרך עוז':[32.5992,35.1731],'מעיין צבי':[32.5817,34.9425],
+  'משמר העמק':[32.6178,35.1339],'עין העמק':[32.5956,35.0742],
+  'עין השופט':[32.6547,35.0711],'עמיקם':[32.5122,35.0264],
+  'קיבוץ מגידו':[32.5852,35.1817],'רמות מנשה':[32.6233,35.0822],
+  'רמת השופט':[32.6583,35.0597],
+  'אזור תעשייה יקנעם עילית':[32.6567,35.1067],
+  'אזור תעשייה מבוא כרמל':[32.7133,34.9742],
+  'אזור תעשייה ניר עציון':[32.6878,35.0117],
+  'אזור תעשייה מבואות הגלבוע':[32.5742,35.2058],
+  'אזור תעשייה אלון התבור':[32.6883,35.4244],
+  'אזור תעשייה קדמת גליל':[32.9125,35.2978],
+  'אזור תעשייה ציפורית':[32.7528,35.2803],
+  'אזור תעשייה בני יהודה':[32.8778,35.7247],
+  'בית סוהר קישון':[32.7978,35.0778],'בית צבי':[32.6578,35.0236],
+  'בת שלמה':[32.5831,34.9856],'גבע כרמל':[32.6658,35.0044],
+  'דור, נחשולים':[32.6136,34.9108],'הבונים':[32.6394,34.9275],
+  'היוגב':[32.6417,35.1958],'כפר ברוך':[32.6283,35.2008],
+  "כרם מהר''ל":[32.6736,34.9869],'מאיר שפיה':[32.6322,34.9519],
+  "מרכז מיר''ב":[32.5831,35.0544],'נווה ים':[32.6006,34.9217],
+  'ניר עציון, ימין אורד':[32.6878,35.0117],'עופר':[32.6644,35.0211],
+  'עין איילה':[32.5769,34.9739],'עין הוד':[32.6878,35.0164],
+  'עין חוד':[32.6956,35.0267],'עין כרמל':[32.6622,35.0344],
+  'פוריידיס':[32.6092,34.9683],'צרופה':[32.6267,34.9903],
+  'גבעת עוז':[32.6039,35.1625],'סואעד חמירה':[32.6239,35.1283],
+  'תחנת רכבת כפר יהושוע':[32.6572,35.1078],
+  'תחנת רכבת כפר ברוך':[32.6283,35.2008],
+  'בית עלמין תל רגב':[32.7197,35.1228],
+  "כפר ח'וואלד":[32.6614,35.1444],
+  "בי\"ס כרמים בנימינה":[32.5256,34.9456],
+  // Jezreel Valley
+  'אחוזת ברק':[32.6133,35.2356],'אכסאל':[32.6958,35.3011],
+  'אלון הגליל':[32.7547,35.4025],'אלוני אבא':[32.7417,35.1544],
+  'בית לחם הגלילית':[32.7053,35.2006],'בית שערים':[32.7044,35.1031],
+  'בלפוריה':[32.6406,35.2525],'גבעת אלה':[32.7261,35.1794],
+  'גבת':[32.6775,35.2053],'גניגר':[32.6564,35.1853],
+  'גשר':[32.5500,35.5308],'דברת':[32.6808,35.3397],
+  'דחי':[32.5883,35.1194],'הושעיה':[32.7572,35.2922],
+  'הסוללים':[32.7086,35.2461],'זרזיר':[32.7131,35.2050],
+  "חג'אג'רה":[32.6594,35.2736],'חנתון':[32.7978,35.2678],
+  'טמרה בגלבוע':[32.5658,35.2617],'יפיע':[32.6917,35.3000],
+  'יפעת':[32.6817,35.2233],'כפר גדעון':[32.5889,35.2736],
+  'כפר החורש':[32.7294,35.2656],'כפר כנא':[32.7472,35.3481],
+  'כפר נהר הירדן':[32.5667,35.5156],'מזרע':[32.7253,35.1208],
+  'מנשית זבדה':[32.5906,35.1472],'מצפה':[32.7450,35.2847],
+  'משהד':[32.7478,35.3406],'נהלל':[32.6661,35.1836],
+  'נין':[32.5717,35.2319],'עילוט':[32.7256,35.2508],
+  'עין מאהל':[32.7453,35.3269],'ציפורי':[32.7528,35.2803],
+  'ריינה':[32.7392,35.3050],'רמת דוד':[32.6644,35.1675],
+  'שמשית':[32.6814,35.1417],'שריד':[32.6531,35.1706],
+  'תל עדשים':[32.6431,35.2019],'תמרת':[32.6914,35.1858],
+  // Lower Galilee / Sea of Galilee
+  'אבטליון':[32.8628,35.3206],'אילניה':[32.7706,35.4183],
+  'אלומות':[32.6567,35.5558],'ארבל':[32.8333,35.4819],
+  'אשדות יעקב':[32.6478,35.5667],
+  "בועיינה-נוג'ידאת":[32.8164,35.3850],
+  'בית זרע':[32.6956,35.5683],'בית ירח':[32.7178,35.5508],
+  'בית קשת':[32.7244,35.3717],'בית רימון':[32.7897,35.3108],
+  'גינוסר':[32.8467,35.5222],'גזית':[32.6733,35.3767],
+  'דגניה א':[32.7103,35.5633],'דגניה ב':[32.7047,35.5689],
+  'דבוריה':[32.6808,35.3397],'האון':[32.7631,35.6169],
+  'הודיות':[32.8869,35.3108],'הזורעים':[32.6972,35.5500],
+  'ואדי אל חמאם':[32.8286,35.5228],'חמת גדר':[32.6864,35.6594],
+  'טורעאן':[32.7800,35.3422],'יבנאל':[32.7253,35.4994],
+  'כדורי':[32.7089,35.3297],'כינרת מושבה':[32.7072,35.5594],
+  'כינרת קבוצה':[32.7028,35.5633],'כנף':[32.7894,35.6683],
+  'כפר זיתים':[32.8400,35.5225],'כפר חיטים':[32.8347,35.5022],
+  'כפר חרוב':[32.8008,35.6681],'כפר כמא':[32.7242,35.4394],
+  'כפר מצר':[32.6967,35.5167],'כפר קיש':[32.7378,35.4239],
+  'כפר תבור':[32.6883,35.4244],'לביא':[32.8456,35.4572],
+  'לבנים':[32.8636,35.5181],'מבוא חמה':[32.8283,35.6822],
+  'מגדל':[32.8422,35.5022],'מיצר':[32.6431,35.5200],
+  'מנחמיה':[32.6500,35.5283],'מסד':[32.9269,35.3961],
+  'מסדה':[32.6714,35.5994],'מעגן':[32.6850,35.5844],
+  'מצפה נטופה':[32.8547,35.3436],'נבי שועייב':[32.8167,35.4181],
+  'נוב':[32.8717,35.6908],'נטור':[32.8503,35.6656],
+  'עוזייר, רומאנה':[32.7008,35.3217],'עילבון':[32.8414,35.3758],
+  'עין גב':[32.8006,35.6631],'עין דור':[32.6139,35.3925],
+  'פוריה כפר עבודה':[32.7481,35.5164],'פוריה נווה עובד':[32.7561,35.5250],
+  'פוריה עילית':[32.7633,35.5278],'צמח':[32.7239,35.5786],
+  'רביד':[32.8733,35.4633],'רומת אל הייב':[32.9225,35.3294],
+  'שדה אילן':[32.7053,35.4494],'שדמות דבורה':[32.6703,35.3397],
+  "שיבלי אום אלג'נם":[32.5889,35.3022],
+  'שער הגולן':[32.6939,35.5833],'שרונה':[32.6983,35.5294],
+  'תל קציר':[32.6992,35.5956],
+  // Golan Heights
+  'אבני איתן':[32.9225,35.6408],'אלי עד':[33.0017,35.6658],
+  'אפיק':[32.7814,35.6631],'אפיקים':[32.6761,35.5936],
+  'בני יהודה וגבעת יואב':[32.8778,35.7247],
+  'גבעת אבני':[32.8594,35.6458],'גשור':[32.8583,35.7133],
+  'חספין':[32.9189,35.7278],'נאות גולן':[32.9169,35.7325],
+  'רמות':[32.8972,35.7200],'רמת מגשימים':[32.9017,35.6956],
+  "מג'ד אל שמס":[33.2750,35.7700],'עין קנייה':[33.2561,35.7372],
+  'מסעדה':[33.2378,35.7622],'בוקעתא':[33.2050,35.7689],
+  'עין זיוון':[32.9853,35.7381],'אל רום':[33.1253,35.7608],
+  'נמרוד':[33.2533,35.7178],
+  // Upper Galilee / Lebanon border
+  'מטולה':[33.2750,35.5728],'שלומי':[33.0747,35.1422],
+  'ראש הנקרה':[33.0881,35.1006],'כיסרא סמיע':[33.0197,35.3358],
+  'יערה':[33.0592,35.2256],'פסוטה':[33.0461,35.2806],
+  'גשר הזיו':[33.0294,35.1211],'בן עמי':[32.9942,35.1333],
+  'לוחמי הגיטאות':[32.9714,35.1108],'יחיעם':[32.9908,35.2411],
+  'אבירים':[33.0208,35.2356],'שאר ישוב':[33.2456,35.5483],
+  'דפנה':[33.2406,35.6222],'דן':[33.2578,35.6525],
+  'כפר גלעדי':[33.2450,35.5650],'מחניים':[33.0989,35.5972],
+  'ראמה':[32.9353,35.3625],'מנות':[33.0236,35.2839],
+  'שניר':[33.2336,35.6419],
+  // Gaza border / South
+  'נחל עוז':[31.4817,34.5342],'זיקים':[31.6378,34.5131],
+  'ניר עוז':[31.4003,34.5167],'בארי':[31.4375,34.5358],
+  'רעים':[31.3844,34.5197],'כפר עזה':[31.4617,34.5378],
+  'נצר חזני':[31.5700,34.5989],'גן יבנה':[31.7878,34.7083],
+  'כיסופים':[31.4183,34.4783],'עין השלושה':[31.2531,34.4839],
+  'נירים':[31.4036,34.5400],'אורים':[31.3808,34.5842],
+  'ישע':[31.3342,34.5814],'מגן':[31.3561,34.5208],
+  'תקומה':[31.4086,34.6028],'קיבוץ ניר אם':[31.4483,34.6100],
+  'גבולות':[31.2564,34.5050],'יד מרדכי':[31.5697,34.5689],
+  'ניצן':[31.7258,34.6228],'ניצנים':[31.7425,34.6089],
+  'נגבה':[31.6742,34.6942],'תל שבע':[31.2628,34.8344],
+  'כסייפה':[31.3381,34.8619],'ערערה בנגב':[31.3233,34.8636],
+  'לקיה':[31.3914,34.8236],'שגב שלום':[31.3022,34.8844],
+  'חורה':[31.2894,34.9333],'להבים':[31.3683,34.8172],
+  'מיתר':[31.3681,34.9092],'גילת':[31.3333,34.6689],
+  'ברוש':[31.4536,34.7019],'משמר הנגב':[31.3672,34.7567],
+  'ספיר':[30.9983,34.9167],
+  // Jerusalem area
+  'בית שמש':[31.7469,34.9889],'מבשרת ציון':[31.8031,35.1281],
+  'גבעת זאב':[31.8806,35.1703],'מעלה אדומים':[31.7778,35.3011],
+  'ביתר עילית':[31.6953,35.1192],
+  // Sharon / Central
+  'גני תקווה':[32.0608,34.8783],'קלנסווה':[32.2842,34.9950],
+  'טייבה':[32.2664,35.0036],'טירה':[32.2286,34.9536],
+  'כפר קאסם':[32.1133,34.9736],"ג'לג'וליה":[32.1575,34.9569],
+  'משמרת':[32.2836,34.9311],'אלקנה':[32.1181,35.0236],
+  'אריאל':[32.1061,35.1722],'כרני שומרון':[32.1747,35.0364],
+  // Missing from alerts.json
+  'אתר ההנצחה גולני':[32.6897,35.2969],
+  "בועיינה-נוג'ידאת":[32.8164,35.3850],
+  'בית סוהר כרמים בנימינה':[32.5256,34.9456],
+  "גבעת ניל''י":[32.5236,34.9917],
+  "חג'אג'רה":[32.6594,35.2736],
+  'ישובי אומן':[32.6108,35.0761],
+  "כפר ח'וואלד":[32.6614,35.1444],
+  "כרם מהר''ל":[32.6736,34.9869],
+  "מרכז מיר''ב":[32.5831,35.0544],
+};
+
+const map = L.map('map').setView([31.5, 34.9], 8);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+  attribution: '&copy; <a href="https://openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+  subdomains: 'abcd', maxZoom: 19
+}).addTo(map);
+
+const mkIcon = color => L.divIcon({
+  className: '',
+  html: `<div style="width:18px;height:18px;border-radius:50%;background:${color};border:3px solid #fff;animation:ap 1.5s infinite"></div>
+         <style>@keyframes ap{0%{box-shadow:0 0 0 2px ${color}88}60%{box-shadow:0 0 0 14px ${color}11}100%{box-shadow:0 0 0 2px ${color}88}}</style>`,
+  iconSize:[18,18], iconAnchor:[9,9], popupAnchor:[0,-12]
+});
+
+let markers = [];
+function clearMarkers() { markers.forEach(m => map.removeLayer(m)); markers = []; }
+
+function addMarker(name, ll, c, alertData) {
+  const m = L.marker(ll, { icon: mkIcon(c.color) }).addTo(map);
+  m.bindPopup(`<div class="pop"><strong>${name}</strong><div class="pc">${c.icon} ${alertData.title}</div><div class="pd">${alertData.desc||''}</div></div>`);
+  markers.push(m);
+}
+
+// Place markers for all locations found in the static table.
+// Locations not in the table are shown in the sidebar chips only.
+function placeMarkers(alertData) {
+  const c = cat(alertData.cat);
+  for (const name of (alertData.data || [])) {
+    const ll = LOCS[name];
+    if (ll) addMarker(name, ll, c, alertData);
+  }
+  // Zoom to fit all markers once — never again until the next new alert
+  if (markers.length > 0) {
+    try { map.fitBounds(L.featureGroup(markers).getBounds().pad(0.35), { maxZoom: 12, animate: false }); } catch(e) {}
+  }
+}
+
+let ctx = null, soundOn = true;
+
+function toggleSound() {
+  soundOn = !soundOn;
+  document.getElementById('bsound').textContent = soundOn ? '🔊 קול' : '🔇 קול';
+}
+
+function playAlert() {
+  if (!soundOn) return;
+  try {
+    if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+    [880,660,880,660].forEach((hz, i) => {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.connect(g); g.connect(ctx.destination);
+      o.frequency.value = hz; o.type = 'sine';
+      const t = ctx.currentTime + i * 0.26;
+      g.gain.setValueAtTime(0.28, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
+      o.start(t); o.stop(t + 0.26);
+    });
+  } catch(e) {}
+}
+
+async function loadHistory() {
+  try {
+    const res  = await fetch(HISTORY_URL, { cache: 'no-store' });
+    const data = await res.json();
+    renderHistory(Array.isArray(data) ? data : []);
+  } catch(e) {
+    renderHistory([]);
+  }
+}
+
+function renderActive(alert) {
+  const body = document.getElementById('active-body');
+  const badge = document.getElementById('badge');
+  if (!alert) {
+    body.innerHTML = `<div class="ok"><div class="oi">✓</div>אין אזעקות פעילות כרגע</div>`;
+    badge.style.display = 'none';
+    return;
+  }
+  const c = cat(alert.cat);
+  const locs = alert.data || [];
+  badge.textContent = locs.length;
+  badge.style.display = 'inline';
+  const chips = locs.map(l =>
+    `<span class="chip" onclick="focusLoc(${JSON.stringify(l)})">${l}</span>`
+  ).join('');
+  const demoTag = isDemo ? `<span class="demo-tag">דמו</span> ` : '';
+  body.innerHTML = `<div class="card ${c.cls}">
+    <div class="card-head">
+      <span class="ci">${c.icon}</span>
+      <div><div class="cn">${demoTag}${alert.title}</div><div class="cd">${alert.desc||''}</div></div>
+      <span class="cc">${locs.length} יישובים</span>
+    </div>
+    <div class="card-locs">${chips}</div>
+  </div>`;
+}
+
+function renderHistory(items) {
+  const body  = document.getElementById('hist-body');
+  const count = document.getElementById('hcount');
+  if (!items || !items.length) {
+    body.innerHTML = `<div style="padding:16px;text-align:center;color:#ccc;font-size:0.8em">אין אזעקות שמורות</div>`;
+    count.textContent = '';
+    return;
+  }
+  count.textContent = items.length;
+  body.innerHTML = items.map(h => {
+    const c     = cat(h.cat);
+    const shown = (h.data||[]).slice(0, 4).join('، ');
+    const more  = (h.data||[]).length > 4 ? ` ועוד ${h.data.length - 4}` : '';
+    const demo  = h.demo ? `<span class="hdemo">דמו</span>` : '';
+    return `<div class="hi">
+      <div class="hd ${c.dot}"></div>
+      <div class="hinfo">
+        <div class="ht">${demo}${c.icon} ${h.title}</div>
+        <div class="hl">${shown}${more}</div>
+      </div>
+      <div class="htime">${relTime(h.alertDate || h.savedAt)}</div>
+    </div>`;
+  }).join('');
+}
+
+function relTime(iso) {
+  if (!iso) return '';
+  try {
+    const d = Date.now() - new Date(iso);
+    const m = Math.floor(d / 60000);
+    if (m < 1)    return 'עכשיו';
+    if (m < 60)   return `לפני ${m} דק'`;
+    if (m < 1440) return `לפני ${Math.floor(m/60)} ש'`;
+    return new Date(iso).toLocaleDateString('he-IL', { day:'numeric', month:'short' });
+  } catch(e) { return ''; }
+}
+
+function setStatus(cls, txt) {
+  document.getElementById('sdot').className = 'sdot ' + cls;
+  document.getElementById('stxt').textContent = txt;
+}
+
+function focusLoc(name) {
+  const ll = LOCS[name];
+  if (!ll) return;
+  map.setView(ll, 14, { animate: true });
+  for (const m of markers) {
+    const p = m.getLatLng();
+    if (Math.abs(p.lat - ll[0]) < 0.002 && Math.abs(p.lng - ll[1]) < 0.002) {
+      m.openPopup(); break;
+    }
+  }
+}
+
+const DEMO_ALERTS = [
+  {
+    id: "demo1",
+    cat: "1",
+    title: "ירי רקטות וטילים",
+    data: ["תל אביב", "יפו", "רמת גן", "גבעתיים", "בני ברק"],
+    desc: "היכנסו למרחב המוגן"
+  },
+  {
+    id: "demo2", 
+    cat: "2",
+    title: "עימות אזרחי",
+    data: ["ירושלים", "בית שמש", "מבשרת ציון"],
+    desc: "שמרו על בטחון"
+  },
+  {
+    id: "demo3",
+    cat: "13",
+    title: "שריפות",
+    data: ["חיפה", "כרמיאל", "נהריה", "עכו"],
+    desc: "פנו לאזור בטוח"
+  },
+  {
+    id: "demo4",
+    cat: "1",
+    title: "ירי רקטות וטילים",
+    data: ["באר שבע", "דימונה", "רהט", "שדרות", "נתיבות", "אופקים"],
+    desc: "היכנסו למרחב המוגן"
+  }
+];
+
+let demoInterval = null;
+let demoIndex = 0;
+
+async function loadDemo() {
+  isDemo = true;
+  demoIndex = 0;
+  clearMarkers();
+  showDemoAlert(DEMO_ALERTS[0]);
+  setStatus('', 'מצב דמו');
+  document.getElementById('demo-banner').style.display = 'block';
+  
+  if (demoInterval) clearInterval(demoInterval);
+  demoInterval = setInterval(() => {
+    demoIndex = (demoIndex + 1) % DEMO_ALERTS.length;
+    showDemoAlert(DEMO_ALERTS[demoIndex]);
+  }, 4000);
+}
+
+function showDemoAlert(data) {
+  lastId = data.id;
+  clearMarkers();
+  renderActive(data);
+  placeMarkers(data);
+  playAlert();
+  if (Notification.permission === 'granted') {
+    new Notification(`🔔 ${data.title}`, { body: (data.data||[]).slice(0,3).join(', ') });
+  }
+  document.getElementById('upd').textContent = 'דמו ' + (demoIndex + 1) + '/' + DEMO_ALERTS.length;
+}
+
+let lastId = null;
+let polling = false;
+
+async function poll() {
+  if (polling) return;   // skip if previous request still in flight
+  polling = true;
+  try {
+    const res  = await fetch(ALERTS_URL, { cache: 'no-store' });
+    const text = (await res.text()).trim().replace(/^\uFEFF/, '');
+    const data = (text && text !== 'null' && text !== '\r\n') ? JSON.parse(text) : null;
+
+    setStatus('', 'מחובר');
+    document.getElementById('upd').textContent = new Date().toLocaleTimeString('he-IL');
+
+    const id = data?.id ?? null;
+
+    if (isDemo) {
+      // While demo is active: only switch away if a REAL alert comes in
+      if (data) {
+        isDemo = false;
+        document.getElementById('demo-banner').style.display = 'none';
+        lastId = id;
+        clearMarkers();
+        renderActive(data);
+        playAlert();
+        if (Notification.permission === 'granted') {
+          new Notification(`🚨 ${data.title}`, { body: (data.data||[]).slice(0,3).join(', ') });
+        }
+        placeMarkers(data);
+        loadHistory();
+      }
+      return; // keep demo on screen while there's no real alert
+    }
+
+    if (id !== lastId) {
+      lastId = id;
+      clearMarkers();
+      renderActive(data);
+      if (data) {
+        playAlert();
+        if (Notification.permission === 'granted') {
+          new Notification(`🚨 ${data.title}`, { body: (data.data||[]).slice(0,3).join(', ') });
+        }
+        placeMarkers(data);
+        loadHistory();
+      }
+    }
+  } catch(e) {
+    setStatus('err', 'שגיאת חיבור');
+  } finally {
+    polling = false;
+  }
+}
+
+if ('Notification' in window && Notification.permission === 'default') {
+  Notification.requestPermission();
+}
+
+loadHistory();
+poll();
+setInterval(poll, POLL_MS);
+setInterval(loadHistory, 60_000);
+</script>
+</body>
+</html>
