@@ -31,11 +31,11 @@ func main() {
 	mux.Handle("/api/history",
 		corsMiddleware(http.HandlerFunc(api.HandleHistory)))
 
-	fs := http.FileServer(http.Dir("."))
+	fs := http.FileServer(http.Dir("ui/dist"))
 
 	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/" {
-			http.ServeFile(w, r, "index.html")
+		if r.URL.Path == "/" || r.URL.Path == "/index.html" {
+			http.ServeFile(w, r, "ui/dist/index.html")
 			return
 		}
 		fs.ServeHTTP(w, r)
